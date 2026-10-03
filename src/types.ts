@@ -72,6 +72,37 @@ export interface Analysis {
   path: PathPreview | null;
 }
 
+export type ZoneId = 'nw' | 'ne' | 'sw' | 'se';
+
+export interface ZoneSpec {
+  zone: ZoneId;
+  label: string;
+  eyebrow: string;
+}
+
+export interface KindStat {
+  kind: ElementKind;
+  count: number;
+  area: number;
+  share: number;
+}
+
+export interface ZoneStat {
+  zone: ZoneId;
+  count: number;
+  area: number;
+  share: number;
+}
+
+export interface LayoutStats {
+  fieldArea: number;
+  occupiedArea: number;
+  freeArea: number;
+  usageShare: number;
+  byKind: KindStat[];
+  byZone: ZoneStat[];
+}
+
 export interface Notice {
   tone: 'info' | 'success' | 'warning' | 'error';
   message: string;

@@ -27,6 +27,24 @@ describe('ExpoSketchViewModel', () => {
     expect(vm.state.analysis.overlaps.length).toBeGreaterThan(0);
   });
 
+  it('refreshes statistics when an element is removed', () => {
+    const vm = new ExpoSketchViewModel(fakeRepository());
+    expect(vm.state.stats.occupiedArea).toBe(88.8);
+    vm.removeSelected();
+    const stage = vm.state.stats.byKind.find((row) => row.kind === 'stage');
+    expect(stage).toMatchObject({ count: 0, area: 0, share: 0 });
+    expect(vm.state.stats.occupiedArea).toBe(56.8);
+    expect(vm.state.stats.freeArea).toBe(447.2);
+  });
+
+  it('recomputes statistics when the field is resized, clipping out-of-bounds parts', () => {
+    const vm = new ExpoSketchViewModel(fakeRepository());
+    vm.resizeField(20, 12);
+    expect(vm.state.stats.fieldArea).toBe(240);
+    expect(vm.state.stats.occupiedArea).toBe(62.8);
+    expect(vm.state.stats.freeArea).toBe(177.2);
+  });
+
   it('recovers the example if repository loading fails', async () => {
     const repository: LayoutRepository = { load: vi.fn(async () => { throw new Error('bad storage'); }), save: vi.fn(async () => {}) };
     const vm = new ExpoSketchViewModel(repository);

@@ -7,8 +7,11 @@ import type {
   ExpoElement,
   FieldSize,
   LayoutDocument,
+  LayoutStats,
   PathPreview,
   OverlapIssue,
+  ZoneId,
+  ZoneSpec,
 } from './types';
 
 export const MIN_CHANNEL = 1.2;
@@ -18,6 +21,13 @@ export const ELEMENT_SPECS: Record<ElementKind, ElementSpec> = {
   stage: { kind: 'stage', label: '主舞台', eyebrow: 'STAGE', icon: '✦', color: '#f2e9ff', width: 8, height: 4 },
   seating: { kind: 'seating', label: '观众座席', eyebrow: 'SEATING', icon: '▤', color: '#e6f7f2', width: 6, height: 3 },
   entrance: { kind: 'entrance', label: '入口', eyebrow: 'ENTRY', icon: '↗', color: '#fff2d8', width: 2.5, height: 1.5 },
+};
+
+export const ZONE_SPECS: Record<ZoneId, ZoneSpec> = {
+  nw: { zone: 'nw', label: '西北区', eyebrow: 'NW' },
+  ne: { zone: 'ne', label: '东北区', eyebrow: 'NE' },
+  sw: { zone: 'sw', label: '西南区', eyebrow: 'SW' },
+  se: { zone: 'se', label: '东南区', eyebrow: 'SE' },
 };
 
 export const createStarterDocument = (): LayoutDocument => ({
@@ -120,6 +130,56 @@ export const analyzeLayout = (document: LayoutDocument): Analysis => ({
   channels: findNarrowChannels(document.elements),
   path: createPathPreview(document.elements),
 });
+
+const round1 = (value: number) => Number(value.toFixed(1));
+
+// 占地口径与检查一致：先取旋转后的占用范围，再裁剪到场地内，越界部分不计入。
+const occupiedAreaInField = (element: ExpoElement, field: FieldSize): number => {
+  const box = getBoundingBox(element);
+  const width = intersectionSize(box.left, box.right, 0, field.width);
+  const height = intersectionSize(box.top, box.bottom, 0, field.height);
+  return width * height;
+};
+
+const zoneOfElement = (element: ExpoElement, field: FieldSize): ZoneId => {
+  const box = getBoundingBox(element);
+  const centerX = box.left + box.width / 2;
+  const centerY = box.top + box.height / 2;
+  const east = centerX >= field.width / 2;
+  const south = centerY >= field.height / 2;
+  if (south) return east ? 'se' : 'sw';
+  return east ? 'ne' : 'nw';
+};
+
+export const summarizeLayout = (document: LayoutDocument): LayoutStats => {
+  const { field, elements } = document;
+  const fieldArea = round1(field.width * field.height);
+  const byKind = (Object.keys(ELEMENT_SPECS) as ElementKind[]).map((kind) => ({ kind, count: 0, area: 0, share: 0 }));
+  const byZone = (Object.keys(ZONE_SPECS) as ZoneId[]).map((zone) => ({ zone, count: 0, area: 0, share: 0 }));
+  const kindRow = new Map(byKind.map((row) => [row.kind, row]));
+  const zoneRow = new Map(byZone.map((row) => [row.zone, row]));
+  let occupied = 0;
+  elements.forEach((element) => {
+    const area = occupiedAreaInField(element, field);
+    occupied += area;
+    const kind = kindRow.get(element.kind);
+    if (kind) { kind.count += 1; kind.area += area; }
+    const zone = zoneRow.get(zoneOfElement(element, field));
+    if (zone) { zone.count += 1; zone.area += area; }
+  });
+  const occupiedArea = round1(occupied);
+  const shareOf = (area: number) => (fieldArea > 0 ? round1((area / fieldArea) * 100) : 0);
+  byKind.forEach((row) => { row.area = round1(row.area); row.share = shareOf(row.area); });
+  byZone.forEach((row) => { row.area = round1(row.area); row.share = shareOf(row.area); });
+  return {
+    fieldArea,
+    occupiedArea,
+    freeArea: Math.max(0, round1(fieldArea - occupiedArea)),
+    usageShare: shareOf(occupiedArea),
+    byKind,
+    byZone,
+  };
+};
 
 export const findElement = (document: LayoutDocument, id: string | null) => document.elements.find((element) => element.id === id) ?? null;
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AnalysisPanel } from './features/analysis-preview/AnalysisPanel';
+import { StatsPanel } from './features/analysis-preview/StatsPanel';
 import { StatusBar } from './features/analysis-preview/StatusBar';
 import { ElementPalette } from './features/element-library/ElementPalette';
 import { FieldSettingsPanel } from './features/field-setup/FieldSettingsPanel';
@@ -30,6 +31,7 @@ function App() {
         <aside className="inspector"><InspectorPanel selectedElement={state.selectedElement} onRename={vm.renameSelected.bind(vm)} onResize={vm.resizeSelected.bind(vm)} onRotate={vm.rotateSelected.bind(vm)} onDelete={vm.removeSelected.bind(vm)} /><FieldSettingsPanel document={state.document} onResizeField={vm.resizeField.bind(vm)} onReset={vm.resetExample.bind(vm)} /></aside>
       </div>
       <AnalysisPanel analysis={state.analysis} mode={state.mode} elementCount={state.document.elements.length} />
+      <StatsPanel stats={state.stats} />
       <StatusBar mode={state.mode} analysis={state.analysis} notice={state.notice} elementCount={state.document.elements.length} lastSavedAt={state.lastSavedAt} onModeChange={vm.setMode.bind(vm)} />
     </main>
   </div>;

@@ -6,9 +6,14 @@ import type {
   ElementSpec,
   ExpoElement,
   FieldSize,
+  FieldStatistics,
+  KindStat,
   LayoutDocument,
   PathPreview,
   OverlapIssue,
+  Rect,
+  ZoneDefinition,
+  ZoneStat,
 } from './types';
 
 export const MIN_CHANNEL = 1.2;
@@ -120,6 +125,124 @@ export const analyzeLayout = (document: LayoutDocument): Analysis => ({
   channels: findNarrowChannels(document.elements),
   path: createPathPreview(document.elements),
 });
+
+const rectArea = (rect: Rect) => Math.max(0, rect.right - rect.left) * Math.max(0, rect.bottom - rect.top);
+
+const intersectRect = (rect: Rect, clip: Rect): Rect => ({
+  left: Math.max(rect.left, clip.left),
+  top: Math.max(rect.top, clip.top),
+  right: Math.min(rect.right, clip.right),
+  bottom: Math.min(rect.bottom, clip.bottom),
+});
+
+/** 矩形并集面积：坐标压缩 + 扫描行，重叠区域只计算一次。 */
+const rectUnionArea = (rects: Rect[]): number => {
+  const valid = rects.filter((rect) => rect.right > rect.left && rect.bottom > rect.top);
+  if (!valid.length) return 0;
+  const xs = Array.from(new Set(valid.flatMap((rect) => [rect.left, rect.right]))).sort((a, b) => a - b);
+  const ys = Array.from(new Set(valid.flatMap((rect) => [rect.top, rect.bottom]))).sort((a, b) => a - b);
+  let area = 0;
+  for (let yi = 0; yi < ys.length - 1; yi += 1) {
+    for (let xi = 0; xi < xs.length - 1; xi += 1) {
+      const covered = valid.some((rect) => rect.left <= xs[xi] && rect.right >= xs[xi + 1] && rect.top <= ys[yi] && rect.bottom >= ys[yi + 1]);
+      if (covered) area += (xs[xi + 1] - xs[xi]) * (ys[yi + 1] - ys[yi]);
+    }
+  }
+  return area;
+};
+
+/** 场地按中线四等分：左上 / 右上 / 左下 / 右下。 */
+export const buildFieldZones = (field: FieldSize): ZoneDefinition[] => {
+  const midX = field.width / 2;
+  const midY = field.height / 2;
+  return [
+    { id: 'zone-tl', name: '左上区', bounds: { left: 0, top: 0, right: midX, bottom: midY } },
+    { id: 'zone-tr', name: '右上区', bounds: { left: midX, top: 0, right: field.width, bottom: midY } },
+    { id: 'zone-bl', name: '左下区', bounds: { left: 0, top: midY, right: midX, bottom: field.height } },
+    { id: 'zone-br', name: '右下区', bounds: { left: midX, top: midY, right: field.width, bottom: field.height } },
+  ];
+};
+
+const round1 = (value: number) => Number(value.toFixed(1));
+const ratioOf = (part: number, total: number) => (total > 0 ? part / total : 0);
+
+/**
+ * 按元素类型与分区汇总数量、占地面积和占比，并给出剩余可用面积。
+ * 占地口径与检查一致：统一使用 getBoundingBox（旋转 90° 后交换宽高），
+ * 先与场地矩形求交裁掉越界部分，再以矩形并集合并重叠，保证剩余面积不会出现负数。
+ */
+export const computeFieldStatistics = (document: LayoutDocument): FieldStatistics => {
+  const { field, elements } = document;
+  const fieldArea = field.width * field.height;
+  const fieldRect: Rect = { left: 0, top: 0, right: field.width, bottom: field.height };
+  const zones = buildFieldZones(field);
+
+  const clippedByKind = new Map<ElementKind, Rect[]>();
+  const clippedByZone = new Map<string, Rect[]>();
+  const zoneCounts = new Map<string, Set<string>>();
+  let outsideArea = 0;
+  let outsideElementCount = 0;
+
+  elements.forEach((element) => {
+    const box: Rect = getBoundingBox(element);
+    const clipped = intersectRect(box, fieldRect);
+    const insideArea = rectArea(clipped);
+    if (insideArea <= 0) outsideElementCount += 1;
+    outsideArea += rectArea(box) - insideArea;
+
+    if (insideArea > 0) {
+      clippedByKind.set(element.kind, [...(clippedByKind.get(element.kind) ?? []), clipped]);
+    }
+    zones.forEach((zone) => {
+      const piece = intersectRect(clipped, zone.bounds);
+      if (rectArea(piece) > 0) {
+        clippedByZone.set(zone.id, [...(clippedByZone.get(zone.id) ?? []), piece]);
+        const members = zoneCounts.get(zone.id) ?? new Set<string>();
+        members.add(element.id);
+        zoneCounts.set(zone.id, members);
+      }
+    });
+  });
+
+  const kinds: KindStat[] = (Object.keys(ELEMENT_SPECS) as ElementKind[]).map((kind) => {
+    const area = rectUnionArea(clippedByKind.get(kind) ?? []);
+    return { kind, count: elements.filter((element) => element.kind === kind).length, area: round1(area), ratio: ratioOf(area, fieldArea) };
+  });
+
+  const occupiedArea = rectUnionArea(elements.map((element) => intersectRect(getBoundingBox(element), fieldRect)));
+
+  const zoneStats: ZoneStat[] = zones.map((zone) => {
+    const zoneArea = rectArea(zone.bounds);
+    const zoneAreaRounded = round1(zoneArea);
+    const zoneOccupied = Math.min(zoneArea, rectUnionArea(clippedByZone.get(zone.id) ?? []));
+    const occupiedRounded = round1(zoneOccupied);
+    return {
+      id: zone.id,
+      name: zone.name,
+      area: zoneAreaRounded,
+      occupiedArea: occupiedRounded,
+      availableArea: zoneAreaRounded - occupiedRounded,
+      ratio: ratioOf(zoneOccupied, zoneArea),
+      count: zoneCounts.get(zone.id)?.size ?? 0,
+    };
+  });
+
+  const fieldAreaRounded = round1(fieldArea);
+  const occupiedRounded = round1(Math.min(fieldArea, occupiedArea));
+
+  return {
+    fieldArea: fieldAreaRounded,
+    elementCount: elements.length,
+    occupiedArea: occupiedRounded,
+    availableArea: fieldAreaRounded - occupiedRounded,
+    occupiedRatio: ratioOf(occupiedArea, fieldArea),
+    availableRatio: 1 - ratioOf(occupiedArea, fieldArea),
+    outsideArea: round1(outsideArea),
+    outsideElementCount,
+    kinds,
+    zones: zoneStats,
+  };
+};
 
 export const findElement = (document: LayoutDocument, id: string | null) => document.elements.find((element) => element.id === id) ?? null;
 

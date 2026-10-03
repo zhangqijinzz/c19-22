@@ -1,6 +1,6 @@
-import { createElement, createStarterDocument, analyzeLayout, findElement, getBoundingBox, normalizeRotation } from './domain';
+import { computeFieldStatistics, createElement, createStarterDocument, analyzeLayout, findElement, getBoundingBox, normalizeRotation } from './domain';
 import type { LayoutRepository } from './repository';
-import type { Analysis, ElementKind, LayoutDocument, LayoutMode, Notice, RenderElement, ViewPhase } from './types';
+import type { Analysis, ElementKind, FieldStatistics, LayoutDocument, LayoutMode, Notice, RenderElement, ViewPhase } from './types';
 
 export interface ExpoSketchState {
   phase: ViewPhase;
@@ -10,6 +10,7 @@ export interface ExpoSketchState {
   selectedElement: RenderElement | null;
   mode: LayoutMode;
   analysis: Analysis;
+  statistics: FieldStatistics;
   notice: Notice;
   lastSavedAt: number | null;
 }
@@ -33,7 +34,8 @@ export class ExpoSketchViewModel {
     selectedId: 'stage-1',
     selectedElement: starterRenderElements.find((element) => element.id === 'stage-1') ?? null,
     mode: 'edit',
-    analysis: analyzeLayout(createStarterDocument()),
+    analysis: analyzeLayout(starter),
+    statistics: computeFieldStatistics(starter),
     notice: { tone: 'info', message: '正在恢复最近布局…' },
     lastSavedAt: null,
   };
@@ -131,7 +133,7 @@ export class ExpoSketchViewModel {
   private commit(patch: Partial<ExpoSketchState>) {
     const next = { ...this.stateValue, ...patch };
     const renderElements = toRenderElements(next.document);
-    this.stateValue = { ...next, renderElements, selectedElement: renderElements.find((element) => element.id === next.selectedId) ?? null, analysis: analyzeLayout(next.document) };
+    this.stateValue = { ...next, renderElements, selectedElement: renderElements.find((element) => element.id === next.selectedId) ?? null, analysis: analyzeLayout(next.document), statistics: computeFieldStatistics(next.document) };
     this.listeners.forEach((listener) => listener());
   }
 }

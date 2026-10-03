@@ -24,6 +24,49 @@ export interface FieldSize {
   height: number;
 }
 
+export interface Rect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export interface ZoneDefinition {
+  id: string;
+  name: string;
+  bounds: Rect;
+}
+
+export interface KindStat {
+  kind: ElementKind;
+  count: number;
+  area: number;
+  ratio: number;
+}
+
+export interface ZoneStat {
+  id: string;
+  name: string;
+  area: number;
+  occupiedArea: number;
+  availableArea: number;
+  ratio: number;
+  count: number;
+}
+
+export interface FieldStatistics {
+  fieldArea: number;
+  elementCount: number;
+  occupiedArea: number;
+  availableArea: number;
+  occupiedRatio: number;
+  availableRatio: number;
+  outsideArea: number;
+  outsideElementCount: number;
+  kinds: KindStat[];
+  zones: ZoneStat[];
+}
+
 export interface LayoutDocument {
   version: 1;
   title: string;
